@@ -1,4 +1,4 @@
-# mycont: My Container From Scratch
+# mycfs: My Containers From Scratch
 
 My hope for this work is to be useful to the reader who wishes to have a better understanding on the topic of containerization and make sense of the overwhelming amount of information available in the internet.
 As the Reference section illustrates, this is not a novelty and is not intended to be one. This documentation has been a useful tool to my purpose of studying and learning many of the key concepts around containerization and so I wish it can be as much for anyone landing to this page. Search no more.
@@ -85,8 +85,8 @@ Traditionally, Unix privilege model divides users into two groups: normal users 
 In the modern world (Containers, Kubernetes and Co.) this is clearly a problem since we might want a process to be able to mount a new folder but not be able to change system time or just own the entire system! Capabilities divides root power into a number of pieces.
 
 Examples:
-    - `CAP_SYS_CHROOT`: grants a process the capability to use chroot
-    - `CAP_SETFCAP`: grants a process the capability to set capabilities!
+    - *CAP_SYS_CHROOT*: grants a process the capability to use chroot
+    - *CAP_SETFCAP*: grants a process the capability to set capabilities!
     - ...
 `man 7 capabilities` will give a complete overview.
 
@@ -187,8 +187,8 @@ Now exit the container (CTRL+D or type exit) and checking again the hostname wil
 
 
 # Resources
-The Linux Programming Interface - Micheal Kerrisk
-https://www.youtube.com/watch?v=Utf-A4rODH8&t=1021s
-https://github.com/tejom/container
-http://man7.org/conf/osseu2017/understanding_user_namespaces-OSS.eu-2017-Kerrisk.pdf
-https://ericchiang.github.io/post/containers-from-scratch/
+- The Linux Programming Interface - Micheal Kerrisk
+- https://www.youtube.com/watch?v=Utf-A4rODH8&t=1021s
+- https://github.com/tejom/container
+- http://man7.org/conf/osseu2017/understanding_user_namespaces-OSS.eu-2017-Kerrisk.pdf
+- https://ericchiang.github.io/post/containers-from-scratch/
