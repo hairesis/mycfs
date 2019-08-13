@@ -136,7 +136,7 @@ int run_command(char **args)
 
 #### unshare
 Let's now move the current process into a new dedicated namespace: UTS.
-As illustrated above, processes can be moved into new namespaces using the `unshare` command. In the child code, just before the `exec` command, the unshare system call will do the trick.
+As illustrated above, processes can be _moved_ into new namespaces using the `unshare` command. In the child code, just before the `exec` command, the unshare system call will do the trick.
 
 ```C
   if (pid == 0) {
@@ -183,6 +183,129 @@ container0
 $ exit
 ```
 Now exit the container (CTRL+D or type exit) and checking again the hostname will give a pleasant surprise.
+
+## Unshare vs Clone
+The _clone_ system call is a generic interface for the creation of new threads and processes and it is also used to implement fork.
+On Linux, at the time of thread creation or process (there is no distinction in the Linux Kernel) using the clone system call, applications can selectively choose which resources to share between threads through the CLONE_* flags.
+
+The System call _unshare_ allows a process to disassociate (hence the name) parts of its execution context that are currently being shared with other processes. unshare thus adds a feature for applications that would like to control shared resources without creating a new process.
+The unshare interface, proposed in [kernel.org, 2006](https://www.kernel.org/doc/html/latest/userspace-api/unshare.html), adds a new system call piggy-backing on the _clone_ interface; such a design decision may result in some confusion, given the naming of the flags passed to the _unshare_ system call, are the same passed to the _clone_ one.
+
+To summarise, fork/unshare/exec are very similar to clone/exec, with the difference that the former operates on the caller process, disassociating the namespaces without having to create a new process or thread, while the latter isolates into new namespaces at process creation.
+
+For the purpose of this work, since we are interested in creating new processes in isolation, we are going to refactor our code using `clone`.
+
+```C
+static int
+child_func(void *arg)
+{
+    char **argv = arg;
+    int status = execvp(argv[0], &argv[0]);
+    if (status < 0){
+      perror("execvp");
+    }
+    return status;
+}
+
+int
+run_command(char *argv[])
+{
+  pid_t child_pid;
+  int flags = 0;
+
+  // Let's define some namespaces for our program will run into
+  flags |= CLONE_NEWUTS;
+
+
+  child_pid = clone(child_func,
+                    child_stack + STACK_SIZE,
+                    flags | SIGCHLD, &argv[0]);
+
+  if (child_pid == -1){
+    perror("clone");
+    return -1;
+  }
+
+  printf("%s: PID of child created by clone() is %ld\n", argv[0], (long) child_pid);
+
+  /* Parent falls through to here and wait
+     for child to terminate.
+   */
+
+  if (waitpid(child_pid, NULL, 0) == -1)
+    perror("waitpid");
+
+  return 0;
+}
+```
+Note how the call to the _clone_ function adds an extra SIGCHLD to the flags. The low byte of the flags, contains the number of the termination signal sent to the parent when the child dies.
+Since clone is a generic function, we have to specify the termination signal; if no signal is specified the parent process will not be signaled when the child terminates.
+As explained in `man 2 clone`, the function requires a pointer to another function to run in the child. In our case, we will run the command we get in input from the client.
+
+## Isolating the pid namespace
+ID namespaces isolate the process ID number space, meaning that processes in different PID namespaces can have the same PID.
+To create a new process in a isolated number space, the caller process will need *CAP_SYS_ADMIN* capability set or be called by _root_ user. Trying to run code below without being _root_ would result in a *EPERM* error. The first process created in a new namespace will get process id 1.
+Let's modify code above to include the new flag *CLONE_NEWPID* to the list of flags and than build it.
+
+For the impatient: full code [here](mycon_pid.c).
+
+```C
+static int
+child_func(void *arg)
+{
+    char **argv = arg;
+    int status = execvp(argv[0], &argv[0]);
+    if (status < 0){
+      perror("execvp");
+    }
+    return status;
+}
+
+int
+run_command(char *argv[])
+{
+  pid_t child_pid;
+  int flags = 0;
+
+  // Let's define some namespaces for our program will run into
+  flags |= CLONE_NEWPID | CLONE_NEWUTS;
+
+
+  child_pid = clone(child_func,
+                    child_stack + STACK_SIZE,
+                    flags | SIGCHLD, &argv[0]);
+
+  if (child_pid == -1){
+    perror("clone");
+    return -1;
+  }
+
+  printf("%s: PID of child created by clone() is %ld\n", argv[0], (long) child_pid);
+
+  /* Parent falls through to here and wait
+     for child to terminate.
+   */
+
+  if (waitpid(child_pid, NULL, 0) == -1)
+    perror("waitpid");
+
+  return 0;
+}
+```
+
+Compile with `make mycont_pid` and run as root:
+```bash
+# ./mycont_pid sh
+# ps
+ 3587 pts/4    00:00:00 mycont_pid
+ 3588 pts/4    00:00:00 sh
+ 3596 pts/4    00:00:00 ps
+31417 pts/4    00:00:00 bash
+```
+The result is not the one we were expecting! This is because _ps_ command looks up into the pseudo file system _/proc_ which we are still sharing with the rest of the system.
+
+## Dedicated root filesystem
+WIP
 
 
 

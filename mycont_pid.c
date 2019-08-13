@@ -13,19 +13,19 @@ static char child_stack[STACK_SIZE];    /* Space for child's stack */
 
 
 static int
-childFunc(void *arg)
+child_func(void *arg)
 {
     char **argv = arg;
     // check proc2/1/status. Our bash command is running within a new ps namespace
-    myProcfs();
+    my_procfs();
     execvp(argv[0], &argv[0]);
     perror("execvp");
 }
 
 
 void
-myProcfs() {
-  char* mount_point = "proc2\0";
+my_procfs() {
+  char* mount_point = "proc2";
   mkdir(mount_point, 0555);
   mount("proc", mount_point, "proc", 0, NULL);
   printf("Mounting procfs at %s\n", mount_point);
