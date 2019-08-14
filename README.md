@@ -171,18 +171,8 @@ $ ps
 ```
 #### Change hostname
 As changing hostname is an action for which Super User permissions are required, let's run the program again as root.
-```bash
-$ hostname
-fedora
-$ sudo ./mycont_unshare sh
-$ whoami
-root
-$ hostname container0
-$hostname
-container0
-$ exit
-```
-Now exit the container (CTRL+D or type exit) and checking again the hostname will give a pleasant surprise.
+[![asciicast](https://asciinema.org/a/D5VIT403nXx5DE8M5ChFhoPQP.svg)](https://asciinema.org/a/D5VIT403nXx5DE8M5ChFhoPQP)
+
 
 ## Unshare vs Clone
 The _clone_ system call is a generic interface for the creation of new threads and processes and it is also used to implement fork.
@@ -247,7 +237,7 @@ ID namespaces isolate the process ID number space, meaning that processes in dif
 To create a new process in a isolated number space, the caller process will need *CAP_SYS_ADMIN* capability set or be called by _root_ user. Trying to run code below without being _root_ would result in a *EPERM* error. The first process created in a new namespace will get process id 1.
 Let's modify code above to include the new flag *CLONE_NEWPID* to the list of flags and than build it.
 
-For the impatient: full code [here](mycon_pid.c).
+For the impatient: full code [here](mycont_pid.c).
 
 ```C
 static int
@@ -304,9 +294,33 @@ Compile with `make mycont_pid` and run as root:
 ```
 The result is not the one we were expecting! This is because _ps_ command looks up into the pseudo file system _/proc_ which we are still sharing with the rest of the system.
 
-## Dedicated root filesystem
-WIP
+## Dedicated /proc filesystem
+To make our system looks like more a docker container, we have to provide a dedicated /proc filesystem.
+To do so, a new function, _my_procfs_ will take care of creating a new _proc2_ folder local to the execution of _mycont_pid_ to substitute itself to the system /proc. This time, our sh command will run in it's dedicated ps namespace and ps will behave as expected.
 
+```C
+static int
+child_func(void *arg)
+{
+    char **argv = arg;
+    // check proc2/1/status.
+    my_procfs();
+    int status = execvp(argv[0], &argv[0]);
+    if (status < 0){
+      perror("execvp");
+    }
+    return status;
+}
+
+
+void
+my_procfs() {
+  char* mount_point = "proc2";
+  mkdir(mount_point, 0555);
+  mount("proc", mount_point, "proc", 0, NULL);
+  printf("Mounting procfs at %s\n", mount_point);
+}
+```
 
 
 # Resources
