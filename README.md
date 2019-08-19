@@ -171,8 +171,7 @@ $ ps
 ```
 #### Change hostname
 As changing hostname is an action for which Super User permissions are required, let's run the program again as root.
-[![asciicast](https://asciinema.org/a/D5VIT403nXx5DE8M5ChFhoPQP.svg)](https://asciinema.org/a/D5VIT403nXx5DE8M5ChFhoPQP)
-
+![mycont_unshare](casts/mycont_unshare.gif)
 
 ## Unshare vs Clone
 The _clone_ system call is a generic interface for the creation of new threads and processes and it is also used to implement fork.
