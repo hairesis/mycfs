@@ -353,7 +353,7 @@ child_func(void *arg)
 The key elements of this approach is to umount the host proc filesystem from the mount view of the child and mount the new (proc2) filesystem as replacement.
 Note that, as stated above, this code will have effect on the host system unless the root mount propagation is *private*.
 
-[![asciicast](https://asciinema.org/a/2TAx7uQ0QhqoXWfoERyKr7wEy.svg)](https://asciinema.org/a/2TAx7uQ0QhqoXWfoERyKr7wEy)
+![mycont_pid](casts/mycont_pid.gif)
 
 The container now has its own view of the process namespace. Listing the /proc directory also shows only two processes (first column) with 1 (sh) and 6 (ls).
 
