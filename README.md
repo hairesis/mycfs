@@ -295,32 +295,128 @@ Compile with `make mycont_pid` and run as root:
 The result is not the one we were expecting! This is because _ps_ command looks up into the pseudo file system _/proc_ which we are still sharing with the rest of the system.
 
 ## Dedicated /proc filesystem
-To make our system looks like more a docker container, we have to provide a dedicated /proc filesystem.
+
+To make our system looks like more a real container, we have to provide a dedicated /proc filesystem.
 To do so, a new function, _my_procfs_ will take care of creating a new _proc2_ folder local to the execution of _mycont_pid_ to substitute itself to the system /proc. This time, our sh command will run in it's dedicated ps namespace and ps will behave as expected.
 
+### Mount namespace and mount propagation
+
+The "mount namespace" of a process is just the set of mounted filesystems that it sees.
+
+This goes from the traditional situation of having one global mount namespace to having per-process mount namespaces. It is thus possible to decide what to do when creating a child process with clone() passing the CLONE_NEWNS (or using unshare) as we've already done in the previous section of this document.
+
+Using CLONE_NEWNS, the child can then unmount /proc, mount another version of it, and only it (and its children) could see the changes.
+No other process can see the changes made by the child in this case.
+
+#### Shared Subtrees: mount propagation
+After the implementation of mount namespaces was completed, experience showed that the isolation that the implementers provided was, in some cases, too great. For this reason, shared subtrees have been introduced such that each mount-point can then have a different propagation types: shared, private, slave, unbindable.
+
+The Linux kernel defaults the root mount with a private propagation, however modern _systmed_-based systems have the propagation strategy set to _shared_, since it is the more commonly employed propagation type. Needless to say, it's controversial.
+
+A clone() operation with CLONE_NEWNS flag set from a shared mount-point will then result in a counter-intuitive situation of having a container which changes in the new mount namespace take effect on the host system.
+
+A simple way around this behaviour is to set the origin mount point mount propagation to private using the command `mount --make-rprivate /`. This change has effect on the host and can be reverted by restarting systemd daemon or with a system restart.
+
 ```C
+int
+my_procfs() {
+  char* mount_point = "proc2";
+  mkdir(mount_point, 0555);
+
+  umount2("/proc", MNT_DETACH);
+  if (mount(mount_point, "/proc", "proc", NO_FLAGS, NULL) < 0){
+    perror("mount");
+    return -1;
+  }
+
+  printf("Mounting procfs %s on /proc\n", mount_point);
+  return 0;
+}
+
+
 static int
 child_func(void *arg)
 {
     char **argv = arg;
-    // check proc2/1/status.
-    my_procfs();
-    int status = execvp(argv[0], &argv[0]);
+    int status = my_procfs();
+    if (status < 0){
+      return -1;
+    }
+    status = execvp(argv[0], &argv[0]);
     if (status < 0){
       perror("execvp");
     }
     return status;
 }
-
-
-void
-my_procfs() {
-  char* mount_point = "proc2";
-  mkdir(mount_point, 0555);
-  mount("proc", mount_point, "proc", 0, NULL);
-  printf("Mounting procfs at %s\n", mount_point);
-}
 ```
+`my_procfs` function illustrates the necessary steps required to swap the host procfs filesystem with a container-dedicated one.
+The key elements of this approach is to umount the host proc filesystem from the mount view of the child and mount the new (proc2) filesystem as replacement.
+Note that, as stated above, this code will have effect on the host system unless the root mount propagation is *private*.
+
+[![asciicast](https://asciinema.org/a/2TAx7uQ0QhqoXWfoERyKr7wEy.svg)](https://asciinema.org/a/2TAx7uQ0QhqoXWfoERyKr7wEy)
+
+The container now has its own view of the process namespace. Listing the /proc directory also shows only two processes (first column) with 1 (sh) and 6 (ls).
+
+## An entire isolated root file system
+Although we have now a dedicated /proc file system, we still share everything else there is on the host disk.
+
+Let's download and prepare it:
+```bash
+$ curl http://dl-cdn.alpinelinux.org/alpine/v3.10/releases/x86_64/alpine-minirootfs-3.10.1-x86_64.tar.gz
+$ mkdir rootfs
+$ tar xzf alpine-minirootfs-3.10.1-x86_64.tar.gz rootfs
+```
+
+What we have to do at this point is to change the root directory of the calling process to the path where the rootfs has been unpacked. To do so *chroot* can be used.
+For the impatient: full code [here](mycont_chroot.c).
+
+```C
+static int
+setup_rootfs()
+{
+
+  int res = 0;
+
+  res = chroot("rootfs");
+  if (res < 0){
+    perror("chroot");
+    return -1;
+  }
+
+  res = mount("tmpfs","/dev","tmpfs", MS_NOSUID | MS_STRICTATIME,NULL);
+  if (res < 0){
+    perror("mount");
+    return -1;
+  }
+
+  res = mount("proc", "/proc", "proc",0, NULL);
+  if (res < 0){
+    perror("mount");
+    return -1;
+  }
+  chdir("/");
+  return res;
+}
+
+
+static int
+child_func(void *arg)
+{
+  char **argv = arg;
+  char *environ[32]; environ[31] = NULL;
+
+  int res = setup_rootfs();
+
+  printf("Running conatiner [%s]: PID %ld\n", argv[0], (long) getpid());
+  execvpe(argv[0], &argv[0], environ);
+
+  // We get here only if execvpe fails to execute!
+  perror("execvpe");
+}
+
+```
+
+### Root Swap vs Chroot
 
 
 # Resources

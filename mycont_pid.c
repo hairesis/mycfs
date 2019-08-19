@@ -3,32 +3,50 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <unistd.h>
-#include <sys/types.h>
 #include <sched.h>
 #include <signal.h>
 
+#include <sys/mount.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+
 #define STACK_SIZE (1024 * 1024)
+#define NO_FLAGS 0
 
 static char child_stack[STACK_SIZE];    /* Space for child's stack */
+
+
+int
+my_procfs() {
+  char* mount_point = "proc2";
+  mkdir(mount_point, 0555);
+
+  umount2("/proc", MNT_DETACH);
+  if (mount(mount_point, "/proc", "proc", NO_FLAGS, NULL) < 0){
+    perror("mount");
+    return -1;
+  }
+
+  printf("Mounting procfs %s on /proc\n", mount_point);
+  return 0;
+}
 
 
 static int
 child_func(void *arg)
 {
     char **argv = arg;
-    // check proc2/1/status. Our bash command is running within a new ps namespace
-    my_procfs();
-    execvp(argv[0], &argv[0]);
-    perror("execvp");
-}
-
-
-void
-my_procfs() {
-  char* mount_point = "proc2";
-  mkdir(mount_point, 0555);
-  mount("proc", mount_point, "proc", 0, NULL);
-  printf("Mounting procfs at %s\n", mount_point);
+    int status = my_procfs();
+    if (status < 0){
+      return -1;
+    }
+    status = execvp(argv[0], &argv[0]);
+    if (status < 0){
+      perror("execvp");
+    }
+    return status;
 }
 
 
@@ -39,10 +57,10 @@ run_command(char *argv[])
   int flags = 0;
 
   // Let's define namespace our program will run into
-  flags |= CLONE_NEWPID | CLONE_NEWUTS;
+  flags |= CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWUTS;
 
   // Explain here why clone is different from fork (amof clone is called by fork)
-  child_pid = clone(childFunc,
+  child_pid = clone(child_func,
                     child_stack + STACK_SIZE,
                     flags | SIGCHLD, &argv[1]);
 
@@ -57,10 +75,12 @@ run_command(char *argv[])
   if (waitpid(child_pid, NULL, 0) == -1)      /* Wait for child */
     perror("waitpid");
 
-  exit(0);
+  return 0;
 }
 
-int main(int argc, char* argv[]) {
+
+int
+main(int argc, char* argv[]) {
 
   int status;
   run_command(argv);
