@@ -19,12 +19,12 @@ setup_rootfs()
 {
 
   int res = 0;
-
   res = chroot("rootfs");
   if (res < 0){
     perror("chroot");
     return -1;
   }
+
 
   res = mount("tmpfs","/dev","tmpfs", MS_NOSUID | MS_STRICTATIME,NULL);
   if (res < 0){
@@ -73,14 +73,18 @@ run_command(char *argv[])
                     flags | SIGCHLD, &argv[1]);
 
 
-  if (child_pid == -1)
+  if (child_pid == -1){
     perror("clone");
+    return -1;
+  }
 
   /* Parent falls through to here waiting for child to finish*/
-  if (waitpid(child_pid, NULL, 0) == -1)
+  if (waitpid(child_pid, NULL, 0) == -1){
     perror("waitpid");
+    return -1;
+  }
 
-  exit(0);
+  return 0;
 }
 
 int main(int argc, char* argv[])

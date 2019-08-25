@@ -356,18 +356,26 @@ Note that, as stated above, this code will have effect on the host system unless
 
 The container now has its own view of the process namespace. Listing the /proc directory also shows only two processes (first column) with 1 (sh) and 6 (ls).
 
-## An entire isolated root file system
-Although we have now a dedicated /proc file system, we still share everything else there is on the host disk.
+## A dedicated root file system
+Although we now have a dedicated /proc file system, we share the same root. The beginning of each path will start from host's root.
+Systme call `chroot`, only changes the root directory of the calling process to a specified path.  This directory will then be used for pathnames beginning with /. The new root directory is inherited by all children of the calling process. See more `man 2 chroot`.
 
-Let's download and prepare it:
+### chroot vs pivot_root
+Some users may be more familiar with pivot_root system call which, in essence, fullfils the same purpose.
+The main difference is that pivot_root is intended to switch the complete system over to a new root directory and remove dependencies on the old one, to allow unmount the original root directory and proceed as if it had never been in use. chroot is intended to apply for the lifetime of a single process, with the rest of the system continuing to run in the old root dir with the system being unchanged when the chrooted process exits. That said docker source code uses pivot_root.
+
+For the purpose of this work, we are going to use chroot.
+
+### Container image
+Before swapping to a new root filesystem let's download a minimal linux distribution. Alpine Linux among the others provides a dedicated set of minimal binaries mean for containerizatoin worloads.
+Download and extract into a rootfs folder: this will become our new container.
+For the impatient: full code [here](mycont_chroot.c).
+
 ```bash
 $ curl http://dl-cdn.alpinelinux.org/alpine/v3.10/releases/x86_64/alpine-minirootfs-3.10.1-x86_64.tar.gz
 $ mkdir rootfs
 $ tar xzf alpine-minirootfs-3.10.1-x86_64.tar.gz rootfs
 ```
-
-What we have to do at this point is to change the root directory of the calling process to the path where the rootfs has been unpacked. To do so *chroot* can be used.
-For the impatient: full code [here](mycont_chroot.c).
 
 ```C
 static int
@@ -388,7 +396,7 @@ setup_rootfs()
     return -1;
   }
 
-  res = mount("proc", "/proc", "proc",0, NULL);
+  res = mount("proc", "/proc", "proc", 0, NULL);
   if (res < 0){
     perror("mount");
     return -1;
@@ -414,8 +422,7 @@ child_func(void *arg)
 }
 
 ```
-
-### Root Swap vs Chroot
+Since we are changing the process root directory to point to another sub-tree of the host filesystem, we don't need to umount the /proc folder anymore in order to create an isolated process space.
 
 
 # Resources
@@ -424,3 +431,4 @@ child_func(void *arg)
 - https://github.com/tejom/container
 - http://man7.org/conf/osseu2017/understanding_user_namespaces-OSS.eu-2017-Kerrisk.pdf
 - https://ericchiang.github.io/post/containers-from-scratch/
+- https://github.com/systemd/systemd/blob/master/src/core/mount-setup.c#L406
