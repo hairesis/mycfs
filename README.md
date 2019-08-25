@@ -298,24 +298,6 @@ The result is not the one we were expecting! This is because _ps_ command looks 
 To make our system looks like more a real container, we have to provide a dedicated /proc filesystem.
 To do so, a new function, _my_procfs_ will take care of creating a new _proc2_ folder local to the execution of _mycont_pid_ to substitute itself to the system /proc. This time, our sh command will run in it's dedicated ps namespace and ps will behave as expected.
 
-### Mount namespace and mount propagation
-
-The "mount namespace" of a process is just the set of mounted filesystems that it sees.
-
-This goes from the traditional situation of having one global mount namespace to having per-process mount namespaces. It is thus possible to decide what to do when creating a child process with clone() passing the CLONE_NEWNS (or using unshare) as we've already done in the previous section of this document.
-
-Using CLONE_NEWNS, the child can then unmount /proc, mount another version of it, and only it (and its children) could see the changes.
-No other process can see the changes made by the child in this case.
-
-#### Shared Subtrees: mount propagation
-After the implementation of mount namespaces was completed, experience showed that the isolation that the implementers provided was, in some cases, too great. For this reason, shared subtrees have been introduced such that each mount-point can then have a different propagation types: shared, private, slave, unbindable.
-
-The Linux kernel defaults the root mount with a private propagation, however modern _systmed_-based systems have the propagation strategy set to _shared_, since it is the more commonly employed propagation type. Needless to say, it's controversial.
-
-A clone() operation with CLONE_NEWNS flag set from a shared mount-point will then result in a counter-intuitive situation of having a container which changes in the new mount namespace take effect on the host system.
-
-A simple way around this behaviour is to set the origin mount point mount propagation to private using the command `mount --make-rprivate /`. This change has effect on the host and can be reverted by restarting systemd daemon or with a system restart.
-
 ```C
 int
 my_procfs() {
@@ -348,6 +330,26 @@ child_func(void *arg)
     return status;
 }
 ```
+
+### Mount namespace and mount propagation
+
+The "mount namespace" of a process is just the set of mounted filesystems that it sees.
+
+This goes from the traditional situation of having one global mount namespace to having per-process mount namespaces. It is thus possible to decide what to do when creating a child process with clone() passing the CLONE_NEWNS (or using unshare) as we've already done in the previous section of this document.
+
+Using CLONE_NEWNS, the child can then unmount /proc, mount another version of it, and only it (and its children) could see the changes.
+No other process can see the changes made by the child in this case.
+
+#### Shared Subtrees: mount propagation
+After the implementation of mount namespaces was completed, experience showed that the isolation that the implementers provided was, in some cases, too great. For this reason, shared subtrees have been introduced such that each mount-point can then have a different propagation types: shared, private, slave, unbindable.
+
+The Linux kernel defaults the root mount with a private propagation, however modern _systemd_-based systems have the propagation strategy set to _shared_, since it is the more commonly employed propagation type.
+
+A clone() operation with CLONE_NEWNS flag set from a shared mount-point will then result in a counter-intuitive situation of having a container which changes in the new mount namespace visible on the host system.
+
+A simple way around this behaviour is to set the origin mount point mount propagation to private using the command `mount --make-rprivate /`. This change has effect on the host and can be reverted by restarting systemd daemon or with a system restart.
+
+
 `my_procfs` function illustrates the necessary steps required to swap the host procfs filesystem with a container-dedicated one.
 The key elements of this approach is to umount the host proc filesystem from the mount view of the child and mount the new (proc2) filesystem as replacement.
 Note that, as stated above, this code will have effect on the host system unless the root mount propagation is *private*.
@@ -358,17 +360,18 @@ The container now has its own view of the process namespace. Listing the /proc d
 
 ## A dedicated root file system
 Although we now have a dedicated /proc file system, we share the same root. The beginning of each path will start from host's root.
-Systme call `chroot`, only changes the root directory of the calling process to a specified path.  This directory will then be used for pathnames beginning with /. The new root directory is inherited by all children of the calling process. See more `man 2 chroot`.
+System call `chroot`, changes the root directory of the calling process to a specified path.  This directory will then be used for pathnames beginning with /. The new root directory is inherited by all children of the calling process. See more `man 2 chroot`.
 
 ### chroot vs pivot_root
 Some users may be more familiar with pivot_root system call which, in essence, fullfils the same purpose.
-The main difference is that pivot_root is intended to switch the complete system over to a new root directory and remove dependencies on the old one, to allow unmount the original root directory and proceed as if it had never been in use. chroot is intended to apply for the lifetime of a single process, with the rest of the system continuing to run in the old root dir with the system being unchanged when the chrooted process exits. That said docker source code uses pivot_root.
+The main difference is that pivot_root is intended to switch the complete system over to a new root directory and remove dependencies on the old one, to allow unmount the original root directory and proceed as if it had never been in use. chroot, on the other hand, is intended to apply for the lifetime of a single process, with the rest of the system continuing to run in the old root dir with the system being unchanged when the chrooted process exits. That said docker source code uses pivot_root.
 
 For the purpose of this work, we are going to use chroot.
 
 ### Container image
-Before swapping to a new root filesystem let's download a minimal linux distribution. Alpine Linux among the others provides a dedicated set of minimal binaries mean for containerizatoin worloads.
-Download and extract into a rootfs folder: this will become our new container.
+Before swapping to a new root filesystem let's download a minimal linux distribution. Alpine Linux among the others provides a dedicated set of minimal binaries meant for containerizatoin workloads.
+Let's download and extract into a folder we will name rootfs: this will become our new container.
+
 For the impatient: full code [here](mycont_chroot.c).
 
 ```bash
@@ -376,6 +379,10 @@ $ curl http://dl-cdn.alpinelinux.org/alpine/v3.10/releases/x86_64/alpine-miniroo
 $ mkdir rootfs
 $ tar xzf alpine-minirootfs-3.10.1-x86_64.tar.gz rootfs
 ```
+
+Code below, moves current root to the new folder `rootfs`. It then mounts the new /proc filesystem we are already familiar with with under /proc.
+
+Since we are changing the process root directory to point to another sub-tree of the host filesystem, we don't need to umount the /proc folder anymore in order to create an isolated process space.
 
 ```C
 static int
@@ -422,8 +429,7 @@ child_func(void *arg)
 }
 
 ```
-Since we are changing the process root directory to point to another sub-tree of the host filesystem, we don't need to umount the /proc folder anymore in order to create an isolated process space.
-
+![mycont_unshare](casts/mycont_chroot.gif)
 
 # Resources
 - The Linux Programming Interface - Micheal Kerrisk
