@@ -85,9 +85,9 @@ Traditionally, Unix privilege model divides users into two groups: normal users 
 In the modern world (Containers, Kubernetes and Co.) this is clearly a problem since we might want a process to be able to mount a new folder but not be able to change system time or just own the entire system! Capabilities divides root power into a number of pieces.
 
 Examples:
-    - CAP_SYS_CHROOT: grants a process the capability to use chroot
-    - CAP_SETFCAP: grants a process the capability to set capabilities!
-    - and others ...
+- CAP_SYS_CHROOT: grants a process the capability to use chroot
+- CAP_SETFCAP: grants a process the capability to set capabilities!
+- and others ...
 `man 7 capabilities` will give a complete overview.
 
 Setting capabilities to a process, is done through system call `setcap`.
@@ -466,7 +466,7 @@ child_func(void *arg)
 int
 run_command(char *argv[]){
 // ...
-  // Explain here why clone is different from fork (aamof clone is called by fork)
+
   child_pid = clone(child_func,
                     child_stack + STACK_SIZE,
                     flags | SIGCHLD, &argv[1]);
