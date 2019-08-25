@@ -431,6 +431,10 @@ child_func(void *arg)
 ```
 ![mycont_unshare](casts/mycont_chroot.gif)
 
+## Networking
+
+![mycont_unshare](casts/mycont_net.gif)
+
 # Resources
 - The Linux Programming Interface - Micheal Kerrisk
 - https://www.youtube.com/watch?v=Utf-A4rODH8&t=1021s
