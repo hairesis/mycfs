@@ -432,6 +432,56 @@ child_func(void *arg)
 ![mycont_unshare](casts/mycont_chroot.gif)
 
 ## Networking
+There is a lot to talk about containers & networking however, in this section we'll limit the scope to the isolation of the network namespace with: `CLONE_NEWNET`.
+As we've done in the previous example to configure the rootfs, we are going to introduce a new function: `setup_container_network`; such a function will configure a virtual network to essentially create a network pipe between the host namespace and the child process. Since we are using the metaphore of a "pipe", we need an extra function right after issueing the clone, `setup_network_interface` to prepare the host system (the calling process) with a new virtual link which will be then connected _on the other end_ by the child process in it's isolated namespace with `setup_container_network` function.
+
+```C
+int
+setup_container_network()
+{
+  system("ip link set lo up");
+  system("ip link set veth1 up");
+  system("ip addr add 169.254.1.2/30 dev veth1");
+  system("route add default gw 169.254.1.1 veth1");
+  return 0;
+}
+
+// ...
+
+static int
+child_func(void *arg)
+{
+  char **argv = arg;
+  char *environ[32]; environ[31] = NULL;
+
+  setup_rootfs();
+  setup_container_network();
+
+  printf("Running conatiner [%s]: PID %ld\n", argv[0], (long) getpid());
+  execvpe(argv[0], &argv[0], environ);
+
+  perror("execvpe");
+}
+
+int
+run_command(char *argv[]){
+// ...
+  // Explain here why clone is different from fork (aamof clone is called by fork)
+  child_pid = clone(child_func,
+                    child_stack + STACK_SIZE,
+                    flags | SIGCHLD, &argv[1]);
+
+  int res = setup_network_interface(child_pid);
+  if (res < 0)
+    perror("interface");
+
+// ...
+
+}
+
+```
+
+
 
 ![mycont_unshare](casts/mycont_net.gif)
 
